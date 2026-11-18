@@ -1,6 +1,6 @@
 import type { CarStats } from '../core/types';
 
-export type CarDesign = 'viper' | 'phantom' | 'bulwark' | 'nova' | 'eclipse';
+export type CarDesign = 'viper' | 'phantom' | 'bulwark' | 'nova' | 'eclipse' | 'bolt';
 export interface CarDef {
   id: string;
   name: string;
@@ -15,6 +15,7 @@ export const CARS: CarDef[] = [
   { id: 'viper', name: 'VIPER GT', tagline: 'Balanced all-rounder', price: 0, design: 'viper', base: { accel: 36, top: 78, handling: 1.0, boost: 100 }, defaultPaint: 0 },
   { id: 'phantom', name: 'PHANTOM X', tagline: 'Straight-line missile', price: 2200, design: 'phantom', base: { accel: 31, top: 90, handling: 0.88, boost: 100 }, defaultPaint: 1 },
   { id: 'bulwark', name: 'BULWARK R', tagline: 'Explosive acceleration', price: 3800, design: 'bulwark', base: { accel: 45, top: 74, handling: 0.96, boost: 90 }, defaultPaint: 3 },
+  { id: 'bolt', name: 'BOLT-9 BIKE', tagline: 'Light, fast, twitchy — a bike', price: 4800, design: 'bolt', base: { accel: 48, top: 84, handling: 1.35, boost: 95 }, defaultPaint: 4 },
   { id: 'nova', name: 'NOVA FLUX', tagline: 'Nimble with a deep boost tank', price: 6000, design: 'nova', base: { accel: 35, top: 81, handling: 1.2, boost: 135 }, defaultPaint: 2 },
   { id: 'eclipse', name: 'ECLIPSE ZERO', tagline: 'Prototype — best in class', price: 9500, design: 'eclipse', base: { accel: 41, top: 92, handling: 1.12, boost: 145 }, defaultPaint: 7 },
 ];

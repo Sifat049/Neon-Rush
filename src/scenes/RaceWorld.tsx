@@ -5,6 +5,8 @@ import type { QualityCfg } from '../game/core/quality';
 import { getRace } from '../game/core/session';
 import { Race } from '../game/core/race';
 import { createTrackVisuals } from '../game/tracks/trackVisuals';
+import { funnyAlways } from '../game/funny';
+import { funny } from '../game/funny';
 import { buildCar, CarModel } from '../game/vehicles/carModel';
 import { getCar } from '../game/vehicles/cars';
 import { Particles, ParticleApi } from '../game/effects/Particles';
@@ -97,13 +99,14 @@ function RaceRunner({ race, models, particles, vis }: { race: Race; models: CarM
         case 'hit': if (e.racer === 0) {
           audio.play('crash', 1, 0.9 + Math.random() * 0.2); if (shakeOn) cam.current.shake = Math.max(cam.current.shake, 0.9 * e.intensity);
           useHud.setState((s) => ({ flashHit: s.flashHit + 1 })); emitSparks(p.pos, p.normal, 26, 22, new THREE.Color(1, 0.6, 0.2));
+          { const f = funny('hit', race.time, 5, 0.8); if (f) hudMessage(f, 'bad'); }
         } break;
         case 'scrape': if (e.racer === 0) { audio.play('scrape', 0.7, 1, 0.1); if (shakeOn) cam.current.shake = Math.max(cam.current.shake, 0.18); _p.copy(p.pos).addScaledVector(p.lat, Math.sign(p.x) * 1.1); emitSparks(_p, p.normal, 4, 10, new THREE.Color(1, 0.8, 0.3)); } break;
-        case 'bump': audio.play('land', 0.5, 1.4, 0.1); if (shakeOn) cam.current.shake = Math.max(cam.current.shake, 0.2); break;
-        case 'jump': if (e.racer === 0) { audio.play('jump', 0.7); cam.current.kick = 6; } break;
+        case 'bump': { const f = e.racer === 0 ? funny('bump', race.time, 8, 0.5) : null; if (f) hudMessage(f, 'info'); } audio.play('land', 0.5, 1.4, 0.1); if (shakeOn) cam.current.shake = Math.max(cam.current.shake, 0.2); break;
+        case 'jump': if (e.racer === 0) { { const f = funny('jump', race.time, 15, 0.2); if (f) hudMessage(f, 'info'); } audio.play('jump', 0.7); cam.current.kick = 6; } break;
         case 'land': if (e.racer === 0) { audio.play('land', 0.4 + e.intensity * 0.6); if (shakeOn) cam.current.shake = Math.max(cam.current.shake, 0.25 * e.intensity); cam.current.kick = -4; } break;
         case 'gravity': if (e.racer === 0) { audio.play('gravity', 0.9); useHud.setState((s) => ({ flashGrav: s.flashGrav + 1 })); } break;
-        case 'boostStart': if (e.racer === 0) { audio.play('boost', 0.8); useHud.setState((s) => ({ flashBoost: s.flashBoost + 1 })); } break;
+        case 'boostStart': if (e.racer === 0) { { const f = funny('boost', race.time, 12, 0.35); if (f) hudMessage(f, 'good'); } audio.play('boost', 0.8); useHud.setState((s) => ({ flashBoost: s.flashBoost + 1 })); } break;
         case 'pad': if (e.racer === 0) { audio.play('pad', 0.8); if (e.kind === 'boost') useHud.setState((s) => ({ flashBoost: s.flashBoost + 1 })); } break;
         case 'checkpoint': if (e.racer === 0) { audio.play('checkpoint', 0.7); hudMessage(`CHECKPOINT  ${formatTime(race.time)}`, 'good'); } break;
         case 'lap': if (e.racer === 0) {
@@ -111,11 +114,11 @@ function RaceRunner({ race, models, particles, vis }: { race: Race; models: CarM
           hudMessage(e.lap < race.laps ? `LAP ${e.lap} · ${formatTime(e.time)}${e.best ? '  BEST!' : ''}` : `FINAL LAP DONE · ${formatTime(e.time)}`, 'good');
           if (e.lap === race.laps - 1) window.setTimeout(() => hudMessage('FINAL LAP', 'info'), 1700);
         } break;
-        case 'finish': if (e.racer === 0) { audio.play('victory', 1); hudMessage(race.event ? race.event.endText() : race.mode === 'challenge' ? 'COURSE COMPLETE' : `FINISHED — P${e.place}`, 'good'); } break;
+        case 'finish': if (e.racer === 0) { audio.play('victory', 1); hudMessage(race.event ? race.event.endText() : race.mode === 'challenge' ? 'COURSE COMPLETE' : `FINISHED — P${e.place}  ${e.place === 1 ? funnyAlways('win') : funnyAlways('lose')}`, 'good'); } break;
         case 'ev': if (e.sfx) audio.play(e.sfx as 'gateOk', 0.8); hudMessage(e.text, e.kind); break;
-        case 'fall': if (e.racer === 0) { audio.play('fall', 0.8); hudMessage('YOU FELL — RESPAWNING', 'bad'); } break;
+        case 'fall': if (e.racer === 0) { audio.play('fall', 0.8); hudMessage(funny('fall', race.time, 3, 1) ?? 'YOU FELL — RESPAWNING', 'bad'); } break;
         case 'respawn': if (e.racer === 0) cam.current.init = false; break;
-        case 'gate': audio.play(e.ok ? 'gateOk' : 'gateBad', 0.8); hudMessage(e.ok ? `PERFECT ${Math.round(e.precision * 100)}%` : 'GATE MISSED', e.ok ? 'good' : 'bad'); break;
+        case 'gate': audio.play(e.ok ? 'gateOk' : 'gateBad', 0.8); hudMessage(e.ok ? `PERFECT ${Math.round(e.precision * 100)}%` : (funny('miss', race.time, 4, 0.8) ?? 'GATE MISSED'), e.ok ? 'good' : 'bad'); break;
       }
     }
   };
@@ -161,6 +164,7 @@ function RaceRunner({ race, models, particles, vis }: { race: Race; models: CarM
       m.pivot.rotation.x = clamp(r.vh * 0.012, -0.25, 0.25);
       if (i === 0 && race.event && !r.grounded) { m.pivot.rotation.y += race.event.trick.spin; m.pivot.rotation.x -= race.event.trick.flip; }
       m.setBoost(r.boosting || r.padBoost > 0 ? 1 : clamp(r.input.throttle * 0.35 + r.speed / (r.stats.top * 3), 0, 0.5));
+      m.spin(delta, r.speed);
       m.group.visible = !(r.invuln > 0 && Math.floor(t * 14) % 2 === 0 && r.stun > 0);
     });
 

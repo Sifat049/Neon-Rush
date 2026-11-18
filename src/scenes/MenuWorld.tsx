@@ -102,7 +102,8 @@ export function MenuWorld({ cfg }: { cfg: QualityCfg }) {
     if (screen !== 'garage') drag.current.rot = damp(drag.current.rot, 0, 1.5, dt);
     st.rot += dt * (auto ? 0.45 : 0);
     model.group.rotation.y = st.rot + drag.current.rot;
-    model.group.position.y = 0.55 + Math.sin(s.clock.elapsedTime * 1.6) * 0.07;
+    model.group.position.y = 0.35 + Math.sin(s.clock.elapsedTime * 1.6) * 0.07;
+    model.spin(dt, 9);
     model.setBoost(0.35 + Math.sin(s.clock.elapsedTime * 3) * 0.1);
     env.bm.uniforms.uTime.value = s.clock.elapsedTime;
     env.ring1.rotation.z += dt * 0.2; env.ring2.rotation.z -= dt * 0.3;
