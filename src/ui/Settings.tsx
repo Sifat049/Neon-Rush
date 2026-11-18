@@ -38,6 +38,7 @@ export function SettingsBody({ compact }: { compact?: boolean }): ReactNode {
         <Seg<QualityLevel> label="QUALITY PRESET" value={s.quality} options={[['LOW', 'Low'], ['MEDIUM', 'Medium'], ['HIGH', 'High']]} onChange={(v) => setSettings({ quality: v })} />
         <Seg<number> label="FRAME RATE" value={s.fps} options={[[30, '30 FPS'], [60, '60 FPS'], [0, 'Max']]} onChange={(v) => setSettings({ fps: v as 30 | 60 | 0 })} />
         <Slider label="RENDER RESOLUTION" value={s.renderScale} min={0.5} max={1} step={0.05} onChange={(v) => setSettings({ renderScale: v })} />
+        <Seg<string> label="FUNNY VOICE (BANGLISH)" value={s.voice ? 'on' : 'off'} options={[['on', 'On'], ['off', 'Off']]} onChange={(v) => setSettings({ voice: v === 'on' })} />
         <Seg<string> label="CAMERA SHAKE" value={s.shake ? 'on' : 'off'} options={[['on', 'On'], ['off', 'Off']]} onChange={(v) => setSettings({ shake: v === 'on' })} />
         <Seg<string> label="FPS COUNTER" value={s.showFps ? 'on' : 'off'} options={[['on', 'On'], ['off', 'Off']]} onChange={(v) => setSettings({ showFps: v === 'on' })} />
       </Panel>

@@ -6,7 +6,7 @@ import { getTrackDef } from '../game/tracks/definitions';
 export interface Settings {
   master: number; music: number; sfx: number; engine: number;
   quality: QualityLevel; fps: 30 | 60 | 0; renderScale: number;
-  touch: 'auto' | 'on' | 'off'; touchSize: number; showFps: boolean; shake: boolean;
+  touch: 'auto' | 'on' | 'off'; touchSize: number; showFps: boolean; shake: boolean; voice: boolean;
 }
 export interface TrackRecord { bestTime?: number; bestLap?: number; bestScore?: number; medal?: string; wins?: number }
 export interface Stats { races: number; wins: number; distance: number; gravSwitches: number; driftTime: number; jumps: number; hits: number; boosts: number }
@@ -38,7 +38,7 @@ export const defaultSave = (): SaveData => ({
   settings: {
     master: 0.8, music: 0.5, sfx: 0.8, engine: 0.6,
     quality: defaultQuality(), fps: 60, renderScale: 1,
-    touch: 'auto', touchSize: 1, showFps: false, shake: true,
+    touch: 'auto', touchSize: 1, showFps: false, shake: true, voice: true,
   },
 });
 
