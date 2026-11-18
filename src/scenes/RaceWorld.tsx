@@ -9,6 +9,8 @@ import { buildCar, CarModel } from '../game/vehicles/carModel';
 import { getCar } from '../game/vehicles/cars';
 import { Particles, ParticleApi } from '../game/effects/Particles';
 import { SpeedLines } from '../game/effects/SpeedLines';
+import { Rain } from '../game/effects/Rain';
+import { WEATHERS } from '../game/weather/weather';
 import { clamp, damp } from '../game/core/math';
 import { clearPulses, readInput } from '../controls/input';
 import { useGame } from '../store/gameStore';
@@ -16,6 +18,7 @@ import { hudMessage, useHud } from '../store/hudStore';
 import { audio } from '../game/audio/audio';
 import type { RaceEvent } from '../game/core/types';
 import { formatTime } from '../game/core/math';
+import { EventLayer } from './EventLayer';
 
 const DT = 1 / 60;
 const frameInfo = { speedF: 0, boost: false };
@@ -26,11 +29,13 @@ export function RaceWorld({ cfg }: { cfg: QualityCfg }) {
   const particles = useRef<ParticleApi>(null);
   const vis = useMemo(() => createTrackVisuals(race.track, cfg, race.obstacles, race.gates), [race, cfg]);
   const models = useMemo<CarModel[]>(() => race.racers.map((r) => buildCar(getCar(r.carId).design, r.primary, r.accent)), [race]);
+  useEffect(() => { vis.setWeather(race.weather); }, [vis, race]);
   useEffect(() => () => vis.dispose(), [vis]);
   useEffect(() => () => models.forEach((m) => m.dispose()), [models]);
   useEffect(() => {
     const pal = race.track.def.palette;
-    scene.fog = new THREE.Fog(pal.fog, 80, 1200);
+    const w = WEATHERS[race.weather];
+    scene.fog = new THREE.Fog(w.fogColor ?? pal.fog, 80 * w.fogNearMul, 1200 * w.fogFarMul);
     return () => { scene.fog = null; };
   }, [scene, race]);
 
@@ -38,9 +43,13 @@ export function RaceWorld({ cfg }: { cfg: QualityCfg }) {
     <>
       <primitive object={vis.group} />
       {models.map((m, i) => <primitive key={i} object={m.group} />)}
-      <ambientLight intensity={0.9} color="#9fb4ff" />
-      <directionalLight position={[40, 80, 30]} intensity={1.4} color="#ffffff" />
-      <hemisphereLight args={['#6fa8ff', '#2a0a40', 0.8]} />
+      <ambientLight intensity={0.9 * WEATHERS[race.weather].light * (race.track.def.lighting ?? 1)} color="#9fb4ff" />
+      <directionalLight position={[40, 80, 30]} intensity={1.4 * WEATHERS[race.weather].light * (race.track.def.lighting ?? 1)} color={race.weather === 'sunset' ? '#ff9a5a' : '#ffffff'} />
+      <hemisphereLight args={['#6fa8ff', '#2a0a40', 0.8 * WEATHERS[race.weather].light]} />
+      {WEATHERS[race.weather].rain > 0 && <Rain count={cfg.speedLines * 6} intensity={WEATHERS[race.weather].rain} getSpeed={() => frameInfo.speedF * 60} />}
+      {WEATHERS[race.weather].dust > 0 && <Rain dust count={cfg.speedLines * 5} intensity={WEATHERS[race.weather].dust} getSpeed={() => frameInfo.speedF * 60} />}
+      {WEATHERS[race.weather].headlights > 0.3 && cfg.post && <Headlights model={models[0]} intensity={WEATHERS[race.weather].headlights} />}
+      {race.event && <EventLayer race={race} />}
       <Particles ref={particles} max={cfg.particles} />
       <SpeedLines count={cfg.speedLines} getSpeed={() => ({ f: frameInfo.speedF, boost: frameInfo.boost })} />
       <RaceRunner race={race} models={models} particles={particles} vis={vis} />
@@ -102,7 +111,8 @@ function RaceRunner({ race, models, particles, vis }: { race: Race; models: CarM
           hudMessage(e.lap < race.laps ? `LAP ${e.lap} · ${formatTime(e.time)}${e.best ? '  BEST!' : ''}` : `FINAL LAP DONE · ${formatTime(e.time)}`, 'good');
           if (e.lap === race.laps - 1) window.setTimeout(() => hudMessage('FINAL LAP', 'info'), 1700);
         } break;
-        case 'finish': if (e.racer === 0) { audio.play('victory', 1); hudMessage(race.mode === 'challenge' ? 'COURSE COMPLETE' : `FINISHED — P${e.place}`, 'good'); } break;
+        case 'finish': if (e.racer === 0) { audio.play('victory', 1); hudMessage(race.event ? race.event.endText() : race.mode === 'challenge' ? 'COURSE COMPLETE' : `FINISHED — P${e.place}`, 'good'); } break;
+        case 'ev': if (e.sfx) audio.play(e.sfx as 'gateOk', 0.8); hudMessage(e.text, e.kind); break;
         case 'fall': if (e.racer === 0) { audio.play('fall', 0.8); hudMessage('YOU FELL — RESPAWNING', 'bad'); } break;
         case 'respawn': if (e.racer === 0) cam.current.init = false; break;
         case 'gate': audio.play(e.ok ? 'gateOk' : 'gateBad', 0.8); hudMessage(e.ok ? `PERFECT ${Math.round(e.precision * 100)}%` : 'GATE MISSED', e.ok ? 'good' : 'bad'); break;
@@ -149,6 +159,7 @@ function RaceRunner({ race, models, particles, vis }: { race: Race; models: CarM
       m.pivot.rotation.y = -r.vx * 0.012 - (r.drifting ? r.input.steer * 0.35 : 0);
       m.pivot.rotation.z = -clamp(r.vx * 0.022, -0.4, 0.4);
       m.pivot.rotation.x = clamp(r.vh * 0.012, -0.25, 0.25);
+      if (i === 0 && race.event && !r.grounded) { m.pivot.rotation.y += race.event.trick.spin; m.pivot.rotation.x -= race.event.trick.flip; }
       m.setBoost(r.boosting || r.padBoost > 0 ? 1 : clamp(r.input.throttle * 0.35 + r.speed / (r.stats.top * 3), 0, 0.5));
       m.group.visible = !(r.invuln > 0 && Math.floor(t * 14) % 2 === 0 && r.stun > 0);
     });
@@ -165,6 +176,11 @@ function RaceRunner({ race, models, particles, vis }: { race: Race; models: CarM
           const c = boost ? _off.set(1.0, 0.75, 0.35) : _off.set(0.35, 0.8, 1);
           const col = r.isPlayer ? c.set(accent.r + (boost ? 0.7 : 0.1), accent.g + (boost ? 0.5 : 0.1), accent.b + (boost ? 0.3 : 0.1)) : _off.set(0.55, 0.45, 1);
           pa.emit(_p.x, _p.y, _p.z, -r.fwd.x * r.speed * 0.12 + (Math.random() - 0.5) * 2, -r.fwd.y * r.speed * 0.12 + (Math.random() - 0.5) * 2, -r.fwd.z * r.speed * 0.12 + (Math.random() - 0.5) * 2, col.x * 1.6, col.y * 1.6, col.z * 1.6, boost ? 1.5 : 1, boost ? 0.55 : 0.4);
+        }
+        const lc = race.event?.lightColor(r.id, state.clock.elapsedTime);
+        if (lc) {
+          _p.copy(models[i].group.position).addScaledVector(r.normal, 1.15);
+          pa.emit(_p.x, _p.y, _p.z, 0, 0, 0, lc[0], lc[1], lc[2], 1.6, 0.2);
         }
         if (r.drifting) {
           _p.copy(models[i].group.position).addScaledVector(r.fwd, -1.6).addScaledVector(r.normal, 0.1);
@@ -212,7 +228,7 @@ function RaceRunner({ race, models, particles, vis }: { race: Race; models: CarM
     c.fov = damp(c.fov, tf, 6, dt);
     if (Math.abs(camera.fov - c.fov) > 0.02) { camera.fov = c.fov; camera.updateProjectionMatrix(); }
 
-    vis.update(state.clock.elapsedTime, camera, race);
+    vis.update(state.clock.elapsedTime, camera, race, Math.min(delta, 0.05));
     if (!paused) audio.engineUpdate(p.speed / p.stats.top, p.input.throttle, p.boosting);
 
     // ---------- HUD (throttled ~15 Hz)
@@ -230,9 +246,25 @@ function RaceRunner({ race, models, particles, vis }: { race: Race; models: CarM
         boost: clamp(p.boostEnergy / p.stats.boost, 0, 1), boosting: p.boosting,
         surf: p.surf, transit: p.transit, progress: race.progress(), phase: race.phase,
         bestLap: isFinite(p.bestLap) ? p.bestLap : null, mode: race.mode, fps: fpsRef.current.v,
+        event: race.event ? race.event.hud() : null,
         gateInfo: race.mode === 'challenge' ? { score: ch.score, combo: ch.combo, hit: ch.hit, missed: ch.nextGate - ch.hit, total: ch.total, nextSurface: next ? next.surface : -1, nextIdx: ch.nextGate, lastOk: ch.lastGateOk } : null,
       });
     }
   });
+  return null;
+}
+
+
+/** One cheap spot light on the player's car so the road ahead is lit in the dark / rain. */
+function Headlights({ model, intensity }: { model: CarModel; intensity: number }) {
+  useEffect(() => {
+    const spot = new THREE.SpotLight('#cfe8ff', 120 * intensity, 90, 0.5, 0.7, 1.4);
+    spot.position.set(0, 0.6, -1.2);
+    const target = new THREE.Object3D();
+    target.position.set(0, -0.2, -30);
+    model.group.add(spot, target);
+    spot.target = target;
+    return () => { model.group.remove(spot, target); spot.dispose(); };
+  }, [model, intensity]);
   return null;
 }

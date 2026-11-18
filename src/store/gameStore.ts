@@ -3,12 +3,13 @@ import type { GameMode } from '../game/core/types';
 import { Race, RaceSummary } from '../game/core/race';
 import { setRace } from '../game/core/session';
 import { CARS, MAX_UPGRADE, UpgradeKey, effectiveStats, getCar, upgradeCost, PAINTS } from '../game/vehicles/cars';
-import { TRACKS } from '../game/tracks/definitions';
+import { TRACKS, getTrackDef } from '../game/tracks/definitions';
 import { ACHIEVEMENTS, Rewards, SaveData, Settings, computeRewards, levelInfo, loadSave, persist, persistNow } from './saveData';
+import type { WeatherId } from '../game/weather/weather';
 import { audio } from '../game/audio/audio';
 
-export type Screen = 'menu' | 'tracks' | 'garage' | 'settings' | 'howto' | 'profile' | 'race' | 'results';
-export interface Results { summary: RaceSummary; rewards: Rewards; carId: string; records: { time: boolean; lap: boolean; score: boolean } }
+export type Screen = 'menu' | 'editor' | 'tracks' | 'garage' | 'settings' | 'howto' | 'profile' | 'race' | 'results';
+export interface Results { summary: RaceSummary; rewards: Rewards; carId: string; records: { time: boolean; lap: boolean; score: boolean }; leaderboard?: { name: string; score: number; car: string; date: number }[]; lbRank?: number | null }
 export interface Toast { id: number; text: string; kind: 'good' | 'info' | 'bad' }
 
 interface GameStore {
@@ -33,6 +34,11 @@ interface GameStore {
   openGarage: (tab: 'vehicles' | 'paint' | 'upgrades') => void;
   setMode: (m: GameMode) => void;
   setTrack: (id: string) => void;
+  /** screen to return to after a race (e.g. back to the track editor after a test race) */
+  afterRace: Screen | null;
+  setAfterRace: (s: Screen | null) => void;
+  weather: WeatherId | 'default';
+  setWeather: (w: WeatherId | 'default') => void;
   startRace: () => void;
   restartRace: () => void;
   quitRace: () => void;
@@ -58,10 +64,13 @@ export const useGame = create<GameStore>((set, get) => {
     (now ? persistNow : persist)(next);
   };
   const makeRace = () => {
-    const { save, mode, trackId } = get();
+    const { save, mode, trackId, weather } = get();
     const car = getCar(save.selectedCar);
+    const def = getTrackDef(trackId);
+    const cr = def.custom ? def.race : undefined;
     const race = new Race({
-      mode, trackId, carId: car.id, paintIndex: save.paint[car.id] ?? car.defaultPaint,
+      mode, trackId, weather: weather === 'default' ? undefined : weather, carId: car.id,
+      laps: cr?.laps, aiCount: cr ? cr.maxRacers - 1 : undefined, aiDifficulty: cr?.aiDifficulty, startSlot: cr?.startSlot, timeLimit: cr?.timeLimit, paintIndex: save.paint[car.id] ?? car.defaultPaint,
       stats: effectiveStats(car, save.upgrades[car.id]),
     });
     setRace(race);
@@ -94,6 +103,10 @@ export const useGame = create<GameStore>((set, get) => {
     openGarage: (garageTab) => set((s) => ({ garageTab, screen: 'garage', previewCar: s.save.selectedCar })),
     setMode: (mode) => set({ mode }),
     setTrack: (trackId) => set({ trackId }),
+    weather: 'default',
+    setWeather: (weather) => set({ weather }),
+    afterRace: null,
+    setAfterRace: (afterRace) => set({ afterRace }),
     startRace: () => {
       makeRace();
       set((s) => ({ screen: 'race', raceKey: s.raceKey + 1, paused: false, results: null, showSettingsInPause: false }));
@@ -105,7 +118,8 @@ export const useGame = create<GameStore>((set, get) => {
     quitRace: () => {
       setRace(null);
       audio.engineStop();
-      set({ screen: 'menu', paused: false, showSettingsInPause: false });
+      const back = get().afterRace;
+      set({ screen: back ?? 'menu', afterRace: null, paused: false, showSettingsInPause: false });
     },
     setPaused: (paused) => set({ paused }),
     finishRace: (summary) => {
@@ -128,6 +142,20 @@ export const useGame = create<GameStore>((set, get) => {
         const rank = { NONE: 0, BRONZE: 1, SILVER: 2, GOLD: 3 } as Record<string, number>;
         if ((rank[summary.challenge.medal] ?? 0) > (rank[rec.medal ?? 'NONE'] ?? 0)) rec.medal = summary.challenge.medal;
       }
+      // event leaderboards (local top 5 per event + track)
+      let leaderboards = st.save.leaderboards;
+      let lbList: Results['leaderboard'];
+      let lbRank: number | null = null;
+      if (summary.event) {
+        const key = `${summary.event.kind}:${summary.trackId}`;
+        const entry = { name: st.save.name, score: summary.event.score, car: st.save.selectedCar, date: Date.now() };
+        const list = [...(leaderboards?.[key] ?? []), entry].sort((a, b) => b.score - a.score);
+        const idx = list.indexOf(entry);
+        lbRank = idx < 5 && entry.score > 0 ? idx + 1 : null;
+        lbList = list.slice(0, 5);
+        leaderboards = { ...(leaderboards ?? {}), [key]: lbList };
+        if (lbRank === 1 && list.length > 1) flags.score = true;
+      }
       let credits = base.credits;
       const lines = [...base.lines];
       if (flags.time) { lines.push(['New time record', 250]); credits += 250; }
@@ -137,6 +165,7 @@ export const useGame = create<GameStore>((set, get) => {
         credits: st.save.credits + credits,
         xp: st.save.xp + base.xp,
         records: { ...st.save.records, [track]: rec },
+        leaderboards,
         stats: {
           ...st.save.stats,
           races: st.save.stats.races + 1,
@@ -159,7 +188,7 @@ export const useGame = create<GameStore>((set, get) => {
       }
       const after = levelInfo(next.xp).level;
       const rewards: Rewards = { credits, xp: base.xp, lines, newRecord: flags.time || flags.score || flags.lap, newAchievements: newAch, levelUp: after > before ? after : null };
-      set({ save: next, results: { summary, rewards, carId: st.save.selectedCar, records: flags }, screen: 'results' });
+      set({ save: next, results: { summary, rewards, carId: st.save.selectedCar, records: flags, leaderboard: lbList, lbRank }, screen: 'results' });
       persistNow(next);
       audio.engineStop();
     },

@@ -5,12 +5,14 @@ import { obstacleX } from '../physics/racerPhysics';
 import { TrackData } from './trackData';
 import { frameAt, makeFrame } from './trackBuilder';
 import { buildArches, buildPadGeometry, buildRailGeometry, buildRoadGeometry, buildScenery, buildStartLineGeometry, composeBasis, surfaceBasis } from './trackGeometry';
+import { WEATHERS, WeatherId } from '../weather/weather';
 import { FogU, createBuildingMaterial, createCheckerMaterial, createFog, createObstacleMaterial, createPadMaterial, createRoadMaterial, createSkyMaterial } from '../effects/materials';
 
 export interface TrackVisuals {
   group: THREE.Group;
   fog: FogU;
-  update(time: number, camera: THREE.Camera, race: Race | null): void;
+  update(time: number, camera: THREE.Camera, race: Race | null, dt?: number): void;
+  setWeather(id: WeatherId): void;
   dispose(): void;
 }
 
@@ -35,7 +37,7 @@ export function createTrackVisuals(tr: TrackData, cfg: QualityCfg, obstacles: Tr
   const group = new THREE.Group();
   const disposables: { dispose(): void }[] = [];
   const keep = <T extends { dispose(): void }>(o: T) => { disposables.push(o); return o; };
-  const fog = createFog(pal.fog, 40, tr.def.theme === 'city' ? 1100 : 1500);
+  const fog = createFog(pal.fog, 40, (tr.def.theme === 'city' ? 1100 : 1500) / (tr.def.fogMul ?? 1));
   const colA = new THREE.Color(pal.a), colB = new THREE.Color(pal.b), colC = new THREE.Color(pal.c);
   const timeMats: THREE.ShaderMaterial[] = [];
 
@@ -102,7 +104,7 @@ export function createTrackVisuals(tr: TrackData, cfg: QualityCfg, obstacles: Tr
   }
 
   // --- themed scenery
-  const sc = buildScenery(tr, cfg.buildings);
+  const sc = buildScenery(tr, Math.max(10, Math.round(cfg.buildings * (tr.def.decor ?? 1))));
   const bMat = keep(createBuildingMaterial(fog)); timeMats.push(bMat);
   const glowBasic = () => keep(new THREE.MeshBasicMaterial({ toneMapped: false, fog: false, side: THREE.DoubleSide }));
   if (tr.def.theme === 'city') {
@@ -116,6 +118,22 @@ export function createTrackVisuals(tr: TrackData, cfg: QualityCfg, obstacles: Tr
         vec3 c = vec3(0.012,0.014,0.04) + uA * l * 0.55; float d = distance(cameraPosition, vW); c = mix(c, uFogColor, smoothstep(uFogNear * 0.3, uFogFar * 0.8, d)); gl_FragColor = vec4(c, 1.0); #include <colorspace_fragment> }`,
     }));
     const ground = new THREE.Mesh(keep(new THREE.PlaneGeometry(9000, 9000)), gm);
+    ground.rotation.x = -Math.PI / 2; ground.position.set(sc.center.x, sc.groundY, sc.center.z);
+    group.add(ground);
+  } else if (tr.def.theme === 'desert') {
+    if (sc.towers.length) group.add(instanced(keep(new THREE.BoxGeometry(1, 1, 1)), bMat, sc.towers));
+    if (sc.crystals.length) group.add(instanced(keep(new THREE.DodecahedronGeometry(1, 0)), keep(new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1, metalness: 0, color: '#8a5a38' })), sc.crystals));
+    const sandMat = keep(new THREE.ShaderMaterial({
+      uniforms: { uA: { value: colA }, ...fog },
+      vertexShader: 'varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+      fragmentShader: `uniform vec3 uA; uniform vec3 uFogColor; uniform float uFogNear; uniform float uFogFar; varying vec3 vW;
+        float h(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+        float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(h(i),h(i+vec2(1,0)),f.x), mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x), f.y); }
+        void main(){ float rip = n(vW.xz * 0.02) * 0.6 + n(vW.xz * 0.2) * 0.25 + sin(vW.x * 0.08 + n(vW.xz * 0.03) * 6.0) * 0.08;
+          vec3 c = mix(vec3(0.16,0.09,0.05), vec3(0.42,0.24,0.1), rip); vec2 g = abs(fract(vW.xz / 60.0) - 0.5); c += uA * smoothstep(0.485, 0.5, max(g.x, g.y)) * 0.08;
+          float d = distance(cameraPosition, vW); c = mix(c, uFogColor, smoothstep(uFogNear * 0.3, uFogFar * 0.8, d)); gl_FragColor = vec4(c, 1.0); #include <colorspace_fragment> }`,
+    }));
+    const ground = new THREE.Mesh(keep(new THREE.PlaneGeometry(9000, 9000)), sandMat);
     ground.rotation.x = -Math.PI / 2; ground.position.set(sc.center.x, sc.groundY, sc.center.z);
     group.add(ground);
   } else if (tr.def.theme === 'core') {
@@ -161,10 +179,39 @@ export function createTrackVisuals(tr: TrackData, cfg: QualityCfg, obstacles: Tr
   sky.frustumCulled = false; sky.renderOrder = -10;
   group.add(sky);
 
+  // --- weather: re-tints fog / sky and makes the road wet. Lightning flashes briefly lift everything to white.
+  const fogNear0 = 40, fogFar0 = (tr.def.theme === 'city' ? 1100 : 1500) / (tr.def.fogMul ?? 1);
+  const baseFog = new THREE.Color(pal.fog), baseTop = new THREE.Color(pal.skyTop), baseBot = new THREE.Color(pal.skyBottom);
+  let wx = WEATHERS.clear;
+  let flash = 0, nextBolt = 3;
+  const tmpC = new THREE.Color();
+  const applyColors = () => {
+    fog.uFogColor.value.copy(wx.fogColor ? tmpC.set(wx.fogColor) : baseFog);
+    skyMat.uniforms.uTop.value.copy(wx.skyTop ? tmpC.set(wx.skyTop) : baseTop);
+    skyMat.uniforms.uBottom.value.copy(wx.skyBottom ? tmpC.set(wx.skyBottom) : baseBot);
+    if (wx.id === 'night') { skyMat.uniforms.uTop.value.multiplyScalar(0.6); skyMat.uniforms.uBottom.value.multiplyScalar(0.7); }
+    fog.uFogNear.value = fogNear0 * wx.fogNearMul;
+    fog.uFogFar.value = fogFar0 * wx.fogFarMul;
+    roadMat.uniforms.uWet.value = wx.wet;
+    roadMat.uniforms.uSky.value.copy(skyMat.uniforms.uBottom.value).lerp(new THREE.Color('#9fb4ff'), 0.25);
+  };
+
   const tmpM = new THREE.Matrix4();
   return {
     group, fog,
-    update(time, camera, race) {
+    setWeather(id) { wx = WEATHERS[id]; flash = 0; nextBolt = 2 + Math.random() * 3; applyColors(); },
+    update(time, camera, race, dt = 1 / 60) {
+      if (wx.lightning) {
+        nextBolt -= dt;
+        if (nextBolt <= 0) { flash = 1; nextBolt = 3 + Math.random() * 6; }
+      }
+      if (flash > 0) {
+        flash = Math.max(0, flash - dt * 4.5);
+        const k = flash * (0.6 + 0.4 * Math.sin(time * 90));
+        fog.uFogColor.value.copy(wx.fogColor ? tmpC.set(wx.fogColor) : baseFog).lerp(tmpC.set('#d8e6ff'), k * 0.55);
+        skyMat.uniforms.uTop.value.copy(tmpC.set(wx.skyTop ?? pal.skyTop)).lerp(tmpC.set('#c9d8ff'), k * 0.7);
+        if (flash === 0) applyColors();
+      }
       for (const m of timeMats) if (m.uniforms.uTime) m.uniforms.uTime.value = time;
       sky.position.copy(camera.position);
       if (movers.length && race) {

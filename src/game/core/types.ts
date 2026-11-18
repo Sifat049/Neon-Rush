@@ -1,6 +1,6 @@
-export type GameMode = 'quick' | 'trial' | 'challenge' | 'free';
+export type GameMode = 'quick' | 'trial' | 'challenge' | 'free' | 'drift' | 'stunt' | 'police';
 export type QualityLevel = 'LOW' | 'MEDIUM' | 'HIGH';
-export type ThemeId = 'city' | 'core' | 'void';
+export type ThemeId = 'city' | 'core' | 'void' | 'desert';
 
 export interface DriveInput {
   throttle: number; // 0..1
@@ -42,7 +42,7 @@ export interface Obstacle {
 }
 export interface Pad {
   id: number;
-  kind: 'boost' | 'jump';
+  kind: 'boost' | 'jump' | 'ramp';
   s: number;
   surface: number;
   x: number;
@@ -61,12 +61,13 @@ export type RaceEvent =
   | { type: 'land'; racer: number; intensity: number }
   | { type: 'gravity'; racer: number }
   | { type: 'boostStart'; racer: number }
-  | { type: 'pad'; racer: number; kind: 'boost' | 'jump' }
+  | { type: 'pad'; racer: number; kind: 'boost' | 'jump' | 'ramp' }
   | { type: 'checkpoint'; racer: number; index: number }
   | { type: 'lap'; racer: number; lap: number; time: number; best: boolean }
   | { type: 'finish'; racer: number; place: number }
   | { type: 'fall'; racer: number }
   | { type: 'respawn'; racer: number }
   | { type: 'gate'; racer: number; ok: boolean; precision: number }
+  | { type: 'ev'; text: string; kind: 'good' | 'bad' | 'info'; sfx?: string }
   | { type: 'go' }
   | { type: 'count'; n: number };

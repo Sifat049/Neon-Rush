@@ -31,6 +31,8 @@ export function HowToPlay() {
           <p className="mt-1 text-xs leading-relaxed text-cyan-50/85">On phones and tablets the screen shows large buttons: ◀ ▶ steer, GAS, BRAKE, JUMP, BOOST, DRIFT and ⟲ ⟳ gravity. Rotate your device to landscape.</p>
           <div className="mt-4 font-display text-sm font-bold tracking-[0.25em] text-cyan-200">MODES</div>
           <p className="mt-1 text-xs leading-relaxed text-cyan-50/85"><b>Quick Race</b> vs 3 AI · <b>Time Trial</b> records · <b>Gravity Challenge</b>: pass through glowing gates on the surface shown in the HUD · <b>Free Drive</b> practice.</p>
+          <div className="mt-4 font-display text-sm font-bold tracking-[0.25em] text-cyan-200">EVENTS</div>
+          <p className="mt-1 text-xs leading-relaxed text-cyan-50/85"><b>Drift Challenge</b>: hold DRIFT and steer to build a chain; the multiplier grows every 2 s, pink rings mark x2 zones, a crash loses the chain. <b>Stunt Arena</b>: hit the magenta ramps, in the air hold steer to spin and BRAKE to flip, release at a full turn and land clean to build combos. <b>Police Chase</b>: 3 cars ram you (arrest meter), drones lock on and fire an EMP — boost, jump or switch gravity to dodge. Reach a green zone with nobody close, or ram cops off the road.</p>
         </Panel>
       </div>
     </ScreenFrame>

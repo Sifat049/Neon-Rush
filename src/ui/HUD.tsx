@@ -20,6 +20,7 @@ export function HUD() {
   const { paused, setPaused, save } = useGame();
   const showFps = save.settings.showFps;
   const challenge = h.mode === 'challenge';
+  const ev = h.event;
   const surfName = SURFACE_NAMES[h.surf] ?? 'FLOOR';
   return (
     <div className="pointer-events-none absolute inset-0 select-none">
@@ -28,7 +29,8 @@ export function HUD() {
       <Flash n={h.flashBoost} color="rgba(34,229,255,0.45)" />
       {/* top-left: lap / position */}
       <div className="absolute left-[max(0.75rem,env(safe-area-inset-left))] top-3 flex flex-col gap-2">
-        {h.mode !== 'free' && (
+        {ev && <EventPanel ev={ev} />}
+        {h.mode !== 'free' && !ev && (
           <Panel className="px-4 py-2">
             <div className="text-[9px] tracking-[0.3em] text-cyan-100/60">LAP</div>
             <div className="font-display text-2xl font-black text-cyan-100">{Math.min(h.lap, h.laps)}<span className="text-base text-cyan-100/50">/{h.laps}</span></div>
@@ -43,7 +45,7 @@ export function HUD() {
       </div>
       {/* top-center: timers + progress */}
       <div className="absolute left-1/2 top-3 flex w-[min(24rem,36vw)] -translate-x-1/2 flex-col items-center gap-1">
-        {h.mode !== 'free' && (
+        {h.mode !== 'free' && !ev && (
           <Panel className="px-4 py-1.5 text-center">
             <div className="font-display text-xl font-black tracking-widest text-white">{formatTime(h.time)}</div>
             <div className="text-[10px] tracking-widest text-cyan-100/70">LAP {formatTime(h.lapTime)} · BEST {formatTime(h.bestLap)}</div>
@@ -84,6 +86,29 @@ export function HUD() {
       {h.phase === 'countdown' && h.count && <div key={h.count} className="nr-pop absolute inset-0 flex items-center justify-center font-display text-[clamp(5rem,28vh,12rem)] font-black text-white drop-shadow-[0_0_30px_#ff2bd6]">{h.count}</div>}
       {paused && <PauseMenu />}
     </div>
+  );
+}
+
+function EventPanel({ ev }: { ev: NonNullable<ReturnType<typeof useHud.getState>['event']> }) {
+  const mins = Math.floor(ev.timeLeft / 60), secs = Math.floor(ev.timeLeft % 60);
+  const col = ev.kind === 'police' ? '#ff5a6e' : ev.kind === 'stunt' ? '#7df3ff' : '#ff2bd6';
+  return (
+    <Panel className="w-[min(15rem,34vw)] px-4 py-2">
+      <div className="flex items-center justify-between">
+        <div className="font-display text-[10px] font-black tracking-[0.3em]" style={{ color: col }}>{ev.title}</div>
+        <div className="font-display text-base font-black text-white">{mins}:{String(secs).padStart(2, '0')}</div>
+      </div>
+      <div className="font-display text-2xl font-black text-amber-200">{ev.score.toLocaleString()}</div>
+      <div className="font-display text-sm font-bold tracking-widest" style={{ color: col }}>{ev.big}</div>
+      <div className="text-[9px] tracking-widest text-cyan-100/70">{ev.small}</div>
+      {ev.meter != null && (
+        <div className="mt-1.5">
+          <div className="mb-0.5 text-[8px] tracking-[0.3em] text-cyan-100/60">{ev.meterLabel}</div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full transition-[width] duration-100" style={{ width: `${Math.min(100, ev.meter * 100)}%`, background: ev.meterDanger ? 'linear-gradient(90deg,#ff9a3b,#ff2b3a)' : 'linear-gradient(90deg,#22e5ff,#3bff9a)' }} /></div>
+        </div>
+      )}
+      <div className="mt-1 text-[9px] font-bold tracking-widest text-lime-300">{ev.status}</div>
+    </Panel>
   );
 }
 

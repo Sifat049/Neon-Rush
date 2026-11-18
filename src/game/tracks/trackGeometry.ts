@@ -262,6 +262,38 @@ export function buildScenery(tr: TrackData, count: number): SceneryData {
       const mm = new THREE.Matrix4().compose(pos, q.setFromRotationMatrix(m4.makeBasis(f.r, f.u, f.t.clone().negate())), sc.set(10 + r() * 14, 5 + r() * 8, 0.6));
       out.panels.push({ m: mm, c: palette[Math.floor(r() * 3)].clone().multiplyScalar(1.4) });
     }
+  } else if (tr.def.theme === 'desert') {
+    // abandoned towers (shorter, sparser, tilted) + boulders
+    let guard = 0;
+    while (out.towers.length < Math.floor(count * 0.7) && guard++ < count * 25) {
+      const i = Math.floor(r() * pts.length);
+      const base = pts[i];
+      frameAt(sm, i * 3 * sm.ds, f);
+      const side = r() < 0.5 ? -1 : 1;
+      const d = W + 30 + Math.pow(r(), 1.3) * 420;
+      const dir = new THREE.Vector3(f.r.x, 0, f.r.z).normalize().multiplyScalar(side);
+      const x = base.x + dir.x * d + (r() - 0.5) * 30, z = base.z + dir.z * d + (r() - 0.5) * 30;
+      const w = 12 + r() * 26, dd = 12 + r() * 26;
+      const top = out.groundY + 30 + r() * 150;
+      if (!clearFlat(x, z, top, Math.max(w, dd) * 0.75)) continue;
+      const h = top - out.groundY;
+      m4.compose(pos.set(x, out.groundY + h / 2, z), q.setFromEuler(e.set((r() - 0.5) * 0.12, r() * 1.2, (r() - 0.5) * 0.12)), sc.set(w, h, dd));
+      out.towers.push({ m: m4.clone(), c: palette[Math.floor(r() * 3)].clone().multiplyScalar(0.5 + r() * 0.5) });
+    }
+    guard = 0;
+    while (out.crystals.length < Math.floor(count * 0.6) && guard++ < count * 25) {
+      const i = Math.floor(r() * pts.length);
+      const base = pts[i];
+      frameAt(sm, i * 3 * sm.ds, f);
+      const side = r() < 0.5 ? -1 : 1;
+      const d = W + 20 + r() * 300;
+      const dir = new THREE.Vector3(f.r.x, 0, f.r.z).normalize().multiplyScalar(side);
+      const x = base.x + dir.x * d, z = base.z + dir.z * d;
+      const rad = 6 + r() * 16;
+      if (!clearFlat(x, z, out.groundY + rad, rad)) continue;
+      m4.compose(pos.set(x, out.groundY + rad * 0.4, z), q.setFromEuler(e.set(r() * 3, r() * 3, r() * 3)), sc.set(rad, rad * 0.7, rad));
+      out.crystals.push({ m: m4.clone(), c: new THREE.Color('#6b4a30') });
+    }
   } else if (tr.def.theme === 'core') {
     let guard = 0;
     while (out.crystals.length < count && guard++ < count * 30) {

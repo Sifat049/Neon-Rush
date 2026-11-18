@@ -10,15 +10,32 @@ export function Results() {
   if (!results) return null;
   const { summary: s, rewards: r, records } = results;
   const track = getTrackDef(s.trackId);
-  const headline = s.mode === 'quick' ? `${ORD[s.playerPlace] ?? s.playerPlace} PLACE` : s.mode === 'challenge' ? `${s.challenge?.medal ?? 'NONE'} MEDAL` : s.mode === 'trial' ? 'TRIAL COMPLETE' : 'DONE';
+  const e = s.event;
+  const headline = e ? (e.kind === 'police' ? (e.outcome === 'ESCAPED' ? 'ESCAPED!' : e.outcome === 'SURVIVED' ? 'SURVIVED' : 'BUSTED') : `${e.outcome} MEDAL`) : s.mode === 'quick' ? `${ORD[s.playerPlace] ?? s.playerPlace} PLACE` : s.mode === 'challenge' ? `${s.challenge?.medal ?? 'NONE'} MEDAL` : s.mode === 'trial' ? 'TRIAL COMPLETE' : 'DONE';
   return (
     <div className="nr-in pointer-events-auto absolute inset-0 flex items-center justify-center bg-black/65 p-3 backdrop-blur-sm">
       <div className="nr-scroll grid max-h-full w-[min(56rem,100%)] gap-3 overflow-y-auto sm:grid-cols-2">
         <Panel className="p-5">
           <div className="text-[10px] tracking-[0.3em] text-cyan-100/60">{track.name} · {s.mode.toUpperCase()}</div>
           <div className="nr-title font-display text-4xl font-black tracking-widest">{headline}</div>
-          {s.mode !== 'challenge' && <div className="mt-2 font-display text-2xl text-amber-200">{formatTime(s.totalTime)}</div>}
-          <div className="text-xs tracking-widest text-cyan-100/70">BEST LAP {formatTime(s.bestLap)} {records.lap && <b className="text-lime-300">NEW RECORD!</b>} {records.time && <b className="text-lime-300">TIME RECORD!</b>}</div>
+          {s.mode !== 'challenge' && !e && <div className="mt-2 font-display text-2xl text-amber-200">{formatTime(s.totalTime)}</div>}
+          {!e && <div className="text-xs tracking-widest text-cyan-100/70">BEST LAP {formatTime(s.bestLap)} {records.lap && <b className="text-lime-300">NEW RECORD!</b>} {records.time && <b className="text-lime-300">TIME RECORD!</b>}</div>}
+          {e && (
+            <div className="mt-2">
+              <div className="font-display text-2xl text-amber-200">{e.score.toLocaleString()} <span className="text-xs tracking-widest text-cyan-100/60">POINTS {results.records.score && <b className="text-lime-300">NEW BEST!</b>}</span></div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] tracking-widest text-cyan-100/70 sm:grid-cols-3">
+                {e.stats.map(([k, v]) => <div key={k}>{k}<br /><b className="text-sm text-cyan-50">{v}</b></div>)}
+              </div>
+              {results.leaderboard && (
+                <div className="mt-3">
+                  <div className="mb-1 text-[10px] tracking-[0.3em] text-cyan-100/60">LEADERBOARD · THIS TRACK</div>
+                  {results.leaderboard.map((l, i) => (
+                    <div key={l.date + '' + i} className={`flex justify-between rounded px-3 py-1 text-xs tracking-widest ${results.lbRank === i + 1 ? 'bg-amber-300/20 text-amber-200' : 'bg-white/5 text-cyan-100/70'}`}><span>{i + 1}. {l.name}</span><span>{l.score.toLocaleString()}</span></div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {s.challenge && <div className="mt-2 text-sm tracking-widest text-cyan-50">SCORE <b className="text-amber-200">{fmtNum(s.challenge.score)}</b> · GATES {s.challenge.hit}/{s.challenge.total} · PRECISION {(s.challenge.avgPrecision * 100).toFixed(0)}% · COMBO x{s.challenge.bestCombo} {records.score && <b className="text-lime-300">NEW BEST!</b>}</div>}
           {s.mode === 'quick' && (
             <div className="mt-3 grid gap-1">{s.standings.map((st) => (

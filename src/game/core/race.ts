@@ -1,3 +1,4 @@
+import { WEATHERS, WeatherId } from '../weather/weather';
 import { clamp, HALF_PI } from './math';
 import type { CarStats, ChallengeGate, DriveInput, GameMode, Obstacle, RaceEvent } from './types';
 import { emptyInput } from './types';
@@ -5,6 +6,7 @@ import { CARS, PAINTS, effectiveStats, getCar, noUpgrades } from '../vehicles/ca
 import { TrackData, getTrack } from '../tracks/trackData';
 import { Racer, RaceCtx, createRacer, placeAt, stepRacer, wrapDelta, updatePose } from '../physics/racerPhysics';
 import { AI_PROFILES, createAI, updateAI } from '../ai/ai';
+import { createEvent, EventSummary, GameEvent } from '../events/events';
 
 export interface RaceConfig {
   mode: GameMode;
@@ -13,6 +15,12 @@ export interface RaceConfig {
   paintIndex: number;
   stats: CarStats;
   laps?: number;
+  weather?: WeatherId;
+  /** custom-race settings (track editor) */
+  aiCount?: number; // 0..3 AI opponents in a quick race
+  aiDifficulty?: number; // 0..1, 0.5 = default
+  startSlot?: number; // 1-based grid slot for the player
+  timeLimit?: number; // seconds, 0 = none
 }
 
 export interface Standing {
@@ -22,11 +30,15 @@ export interface RaceSummary {
   mode: GameMode; trackId: string; laps: number;
   standings: Standing[]; playerPlace: number; totalTime: number; bestLap: number | null; lapTimes: number[];
   topSpeed: number; hits: number; falls: number; gravSwitches: number; jumps: number; driftTime: number; distance: number; surfaces: number;
+  timedOut?: boolean;
+  event?: EventSummary;
   challenge?: { score: number; hit: number; total: number; avgPrecision: number; bestCombo: number; medal: 'GOLD' | 'SILVER' | 'BRONZE' | 'NONE' };
 }
 
 export class Race implements RaceCtx {
   track: TrackData;
+  weather: WeatherId;
+  grip: number;
   mode: GameMode;
   laps: number;
   racers: Racer[] = [];
@@ -38,17 +50,24 @@ export class Race implements RaceCtx {
   countdown = 3.4;
   private lastCount = 4;
   finishTimer = 0;
+  timeLimit = 0;
+  timedOut = false;
   over = false;
   topSpeed = 0;
   gates: ChallengeGate[] = [];
   challenge = { score: 0, hit: 0, total: 0, combo: 0, bestCombo: 0, precisionSum: 0, nextGate: 0, lastGateOk: true, results: [] as number[] };
   summary: RaceSummary | null = null;
+  event: GameEvent | null = null;
+  extraPads: import('./types').Pad[] | undefined;
 
   constructor(public cfg: RaceConfig) {
     this.track = getTrack(cfg.trackId);
     this.mode = cfg.mode;
-    this.laps = cfg.mode === 'free' ? 0 : cfg.mode === 'challenge' ? 1 : cfg.laps ?? this.track.def.laps;
-    this.obstacles = cfg.mode === 'challenge' ? [] : this.track.obstacles;
+    this.timeLimit = cfg.timeLimit ?? 0;
+    this.weather = cfg.weather ?? this.track.def.weather ?? 'clear';
+    this.grip = WEATHERS[this.weather].grip;
+    this.laps = cfg.mode === 'free' || cfg.mode === 'drift' || cfg.mode === 'stunt' || cfg.mode === 'police' ? 0 : cfg.mode === 'challenge' ? 1 : cfg.laps ?? this.track.def.laps;
+    this.obstacles = cfg.mode === 'challenge' || cfg.mode === 'stunt' ? [] : this.track.obstacles;
     if (cfg.mode === 'challenge') {
       this.gates = this.track.gates;
       this.challenge.total = this.gates.length;
@@ -57,26 +76,31 @@ export class Race implements RaceCtx {
     const paint = PAINTS[cfg.paintIndex % PAINTS.length];
     this.player = createRacer(0, 'YOU', true, cfg.carId, cfg.stats, paint.primary, paint.accent);
     this.racers.push(this.player);
+    const aiN = cfg.mode === 'quick' ? Math.max(0, Math.min(AI_PROFILES.length, cfg.aiCount ?? AI_PROFILES.length)) : 0;
+    const diff = Math.max(0, Math.min(1, cfg.aiDifficulty ?? 0.5));
+    AI_PROFILES.slice(0, aiN).forEach((p, i) => {
+      const car = getCar(p.carId);
+      const pt = PAINTS[p.paint % PAINTS.length];
+      const st = effectiveStats(car, noUpgrades());
+      const r = createRacer(i + 1, p.name, false, p.carId, st, pt.primary, pt.accent);
+      r.ai = createAI({ skill: Math.max(0.05, Math.min(1, p.skill * (0.6 + 0.8 * diff))), speedScale: Math.min(1, p.speedScale * (0.94 + 0.12 * diff)) }, 17 + i * 31);
+      r.input = emptyInput();
+      this.racers.push(r);
+    });
+    // starting grid, behind the start line. In a quick race the player starts 3rd by default.
     if (cfg.mode === 'quick') {
-      AI_PROFILES.forEach((p, i) => {
-        const car = getCar(p.carId);
-        const pt = PAINTS[p.paint % PAINTS.length];
-        const st = effectiveStats(car, noUpgrades());
-        const r = createRacer(i + 1, p.name, false, p.carId, st, pt.primary, pt.accent);
-        r.ai = createAI(p, 17 + i * 31);
-        r.input = emptyInput();
-        this.racers.push(r);
-      });
-    }
-    // starting grid (player starts 3rd in quick race), behind the start line
-    const slots: [number, number, number][] =
-      cfg.mode === 'quick'
-        ? [[-8, -3.4, 0], [-8, 3.4, 1], [-18, -3.4, 2], [-18, 3.4, 3]] // [dist, x, racerIdx] mapped below
-        : [[-8, 0, 0]];
-    if (cfg.mode === 'quick') {
-      const order = [1, 2, 0, 3]; // AI1(adv), AI2, player, AI3
-      order.forEach((ri, i) => placeAt(this, this.racers[ri], slots[i][0], slots[i][1], 0));
-    } else placeAt(this, this.player, slots[0][0], slots[0][1], 0);
+      const grid: [number, number][] = [[-8, -3.4], [-8, 3.4], [-18, -3.4], [-18, 3.4]];
+      const n = this.racers.length;
+      const playerSlot = Math.max(0, Math.min(n - 1, (cfg.startSlot ?? 3) - 1));
+      const ai = this.racers.filter((r) => !r.isPlayer);
+      let k = 0;
+      for (let slot = 0; slot < n; slot++) {
+        const r = slot === playerSlot ? this.player : ai[k++];
+        placeAt(this, r, grid[slot][0], grid[slot][1], 0);
+      }
+    } else placeAt(this, this.player, -8, 0, 0);
+    this.event = createEvent(this);
+    if (this.event) this.extraPads = this.event.extraPads;
     this.updatePlaces();
   }
 
@@ -92,12 +116,15 @@ export class Race implements RaceCtx {
       return;
     }
     this.time += dt;
+    if (this.timeLimit > 0 && this.time >= this.timeLimit && this.phase === 'racing') { this.timedOut = true; this.phase = 'finished'; this.events.push({ type: 'finish', racer: this.player.id, place: this.player.place }); }
     for (const r of this.racers) {
       if (r.isPlayer && !r.finished) {
         const pi = r.input;
         pi.throttle = playerInput.throttle; pi.brake = playerInput.brake; pi.steer = playerInput.steer;
         pi.jump = playerInput.jump; pi.boost = playerInput.boost; pi.drift = playerInput.drift;
         pi.gravLeft = playerInput.gravLeft; pi.gravRight = playerInput.gravRight;
+      } else if (this.event?.owns(r.id)) {
+        /* driven by the event (police units) */
       } else {
         if (!r.ai) r.ai = createAI({ skill: 0.9, speedScale: 0.8 }, 5); // autopilot after finishing
         updateAI(this, r, dt, this.player);
@@ -111,11 +138,19 @@ export class Race implements RaceCtx {
     }
     this.carCollisions();
     this.updateGates();
+    if (this.event && this.phase === 'racing') this.event.update(dt);
     this.updatePlaces();
     if (this.phase === 'finished') {
       this.finishTimer += dt;
       if (this.finishTimer > 2.6 && !this.over) { this.over = true; this.summary = this.buildSummary(); }
     }
+  }
+
+  /** Called by an event mode when it is over (time up, escaped, busted ...). */
+  endEvent() {
+    if (this.phase !== 'racing') return;
+    this.phase = 'finished';
+    this.events.push({ type: 'finish', racer: this.player.id, place: this.player.place });
   }
 
   private onFinish(r: Racer) {
@@ -203,6 +238,8 @@ export class Race implements RaceCtx {
       driftTime: p.driftTime, distance: p.distance,
       surfaces: [0, 1, 2, 3].reduce((a, k) => a + (p.surfacesUsed & (1 << k) ? 1 : 0), 0),
     };
+    if (this.timedOut) s.timedOut = true;
+    if (this.event) s.event = this.event.summary();
     if (this.mode === 'challenge') {
       const c = this.challenge;
       const ratio = c.total ? c.hit / c.total : 0;

@@ -41,6 +41,10 @@ export interface RaceCtx {
   laps: number;
   obstacles: Obstacle[];
   events: RaceEvent[];
+  /** weather grip multiplier (1 = dry) */
+  grip?: number;
+  /** extra pads supplied by an event mode (stunt ramps) */
+  extraPads?: import('../core/types').Pad[];
 }
 
 export function obstacleX(o: Obstacle, time: number) {
@@ -168,7 +172,7 @@ export function stepRacer(ctx: RaceCtx, r: Racer, dt: number, racing: boolean) {
 
   // ---- lateral
   const spdF = clamp(r.speed / 22, 0.2, 1);
-  const maxLat = 17 * r.stats.handling * (r.drifting ? 1.4 : 1);
+  const maxLat = 17 * r.stats.handling * (r.drifting ? 1.4 : 1) * (ctx.grip ?? 1);
   const steer = inp.steer * (r.stun > 0 ? 0.35 : 1);
   const targetVx = steer * maxLat * spdF;
   const push = -(F.k.x * latx + F.k.y * laty + F.k.z * latz) * r.speed * r.speed * CURVE_FACTOR;
@@ -232,10 +236,12 @@ export function stepRacer(ctx: RaceCtx, r: Racer, dt: number, racing: boolean) {
       break;
     }
   }
-  // ---- pads
+  // ---- pads (track pads + event ramps)
   if (r.padCool <= 0 && !r.transit) {
-    for (let i = 0; i < tr.pads.length; i++) {
-      const p = tr.pads[i];
+    const ex = ctx.extraPads;
+    const n0 = tr.pads.length, n = n0 + (ex ? ex.length : 0);
+    for (let i = 0; i < n; i++) {
+      const p = i < n0 ? tr.pads[i] : ex![i - n0];
       if (p.surface !== kNear) continue;
       const d = wrapDelta(p.s - r.s, L);
       if (Math.abs(d) > p.hl + 1) continue;
@@ -246,8 +252,8 @@ export function stepRacer(ctx: RaceCtx, r: Racer, dt: number, racing: boolean) {
         r.speed = Math.max(r.speed, r.stats.top * 0.92) + 4;
         ev.push({ type: 'pad', racer: r.id, kind: 'boost' });
       } else if (r.grounded) {
-        r.vh = 21; r.grounded = false; r.jumps++;
-        ev.push({ type: 'pad', racer: r.id, kind: 'jump' });
+        r.vh = p.kind === 'ramp' ? 30 : 21; r.grounded = false; r.jumps++;
+        ev.push({ type: 'pad', racer: r.id, kind: p.kind });
       }
       break;
     }

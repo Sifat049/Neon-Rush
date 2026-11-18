@@ -49,6 +49,7 @@ export function MainMenu() {
         <NeonButton onClick={() => openGarage('vehicles')}>Garage</NeonButton>
         <NeonButton onClick={() => go('tracks')}>Tracks</NeonButton>
         <NeonButton variant="magenta" onClick={() => openGarage('upgrades')}>Upgrade</NeonButton>
+        <NeonButton variant="magenta" onClick={() => go('editor')}>Track Editor</NeonButton>
         <NeonButton onClick={openSettings}>Settings</NeonButton>
         <NeonButton className="[@media(max-height:520px)]:col-span-2" onClick={() => go('howto')}>How to play</NeonButton>
       </div>

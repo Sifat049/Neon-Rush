@@ -104,7 +104,25 @@ function simulate(cmds: Cmd[], lens: number[]): RawPath {
   return { pts, ups, startT };
 }
 
-export interface BuiltPath { samples: TrackSamples; closureError: number; rollFix: number; lens: number[] }
+/** End position (x,z) and heading vector of a command list, using each straight's nominal length. */
+export function endPose(cmds: Cmd[]) {
+  const raw = simulate(cmds, cmds.map((c) => (c.t === 's' ? c.len : 0)));
+  const n = raw.pts.length;
+  const a = raw.pts[n - 2], b = raw.pts[n - 1];
+  const tx = b.x - a.x, tz = b.z - a.z, m = Math.hypot(tx, tz) || 1;
+  return { x: b.x, y: b.y, z: b.z, tx: tx / m, tz: tz / m };
+}
+
+/** Like endPose, plus the heading at the start of every command (used by the track editor's closure planner). */
+export function analyzePath(cmds: Cmd[]) {
+  const raw = simulate(cmds, cmds.map((c) => (c.t === 's' ? c.len : 0)));
+  const n = raw.pts.length;
+  const a = raw.pts[n - 2], b = raw.pts[n - 1];
+  const m = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+  return { end: { x: b.x, y: b.y, z: b.z, tx: (b.x - a.x) / m, tz: (b.z - a.z) / m }, startT: raw.startT.map((t) => ({ x: t.x, z: t.z })) };
+}
+
+export interface BuiltPath { samples: TrackSamples; closureError: number; closureXZ: number; rollFix: number; lens: number[] }
 
 export function buildPath(cmds: Cmd[]): BuiltPath {
   const lens = cmds.map((c) => (c.t === 's' ? c.len : 0));
@@ -183,7 +201,7 @@ export function buildPath(cmds: Cmd[]): BuiltPath {
     const a = tt[(k + 1) % n], b = tt[(k - 1 + n) % n];
     K.set([(a.x - b.x) / (2 * ds), (a.y - b.y) / (2 * ds), (a.z - b.z) / (2 * ds)], k * 3);
   }
-  return { samples: { n, length: L, ds, P, T, U, R, K }, closureError, rollFix, lens };
+  return { samples: { n, length: L, ds, P, T, U, R, K }, closureError, closureXZ: Math.hypot(err.x, err.z), rollFix, lens };
 }
 
 export interface Frame {

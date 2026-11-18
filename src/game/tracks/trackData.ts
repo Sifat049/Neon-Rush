@@ -55,7 +55,7 @@ export function buildTrack(def: TrackDef): TrackData {
 
   // checkpoints
   const checkpoints: number[] = [];
-  for (const f of [0.25, 0.5, 0.75]) {
+  for (const f of def.checkpointFs && def.checkpointFs.length ? def.checkpointFs : [0.25, 0.5, 0.75]) {
     let s = f * L;
     while (nearGap(s, 60)) s += 20;
     checkpoints.push(s);
@@ -89,6 +89,12 @@ export function buildTrack(def: TrackDef): TrackData {
       obstacles.push(mk((rand() - 0.5) * 9, kind));
     }
   }
+  // fixed moving platforms (track-editor pieces)
+  for (const m of def.movers ?? []) {
+    const s = m.f * L;
+    if (nearGap(s, 30)) continue;
+    obstacles.push({ id: obstacles.length, kind: 'mover', s, surface: m.surface, x: 0, hw: 1.6, hl: 1.6, height: 3.4, amp: def.width * 0.45, freq: 0.9 + rand() * 0.5, phase: rand() * TAU });
+  }
   // pads
   id = 0;
   const addPad = (kind: 'boost' | 'jump', s: number, surface: number, x: number) => {
@@ -105,6 +111,7 @@ export function buildTrack(def: TrackDef): TrackData {
     if (nearGap(s, 25)) continue;
     addPad('jump', s, 0, (rand() - 0.5) * 4);
   }
+  for (const fp of def.fixedPads ?? []) if (!nearGap(fp.f * L, 20)) addPad(fp.kind, fp.f * L, fp.surface, 0);
   // run-up boost pads before gaps that cover every surface
   for (const g of gaps) if (g.mask === 15) addPad('boost', g.s0 - 40, 0, 0);
 

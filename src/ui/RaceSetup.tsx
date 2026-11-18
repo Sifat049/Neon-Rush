@@ -1,20 +1,27 @@
 import { useGame } from '../store/gameStore';
-import { TRACKS } from '../game/tracks/definitions';
+import { TRACKS, registerCustomTrack } from '../game/tracks/definitions';
+import { useMemo } from 'react';
+import { loadTracks } from '../editor/storage';
+import { compileDoc } from '../editor/compile';
 import { CARS, getCar } from '../game/vehicles/cars';
 import { formatTime } from '../game/core/math';
 import type { GameMode } from '../game/core/types';
 import { Credits, NeonButton, Panel, ScreenFrame, fmtNum } from './primitives';
 import { getTrack } from '../game/tracks/trackData';
+import { WEATHER_LIST } from '../game/weather/weather';
 
 const MODES: { id: GameMode; name: string; desc: string }[] = [
   { id: 'quick', name: 'Quick Race', desc: 'Race 3 AI opponents for position and credits.' },
   { id: 'trial', name: 'Time Trial', desc: 'Alone against the clock. Records are saved.' },
   { id: 'challenge', name: 'Gravity Challenge', desc: 'Hit gravity gates on the right surface. Precision pays.' },
+  { id: 'drift', name: 'Drift Challenge', desc: '90 s. Hold DRIFT + steer to build chains, score x2 in pink drift zones, bank before you crash.' },
+  { id: 'stunt', name: 'Stunt Arena', desc: '90 s. Hit ramps, hold steer to spin and brake to flip, land clean to build combos.' },
+  { id: 'police', name: 'Police Chase', desc: 'Outrun 3 police cars and EMP drones. Reach a green zone with nobody close, or ram them off.' },
   { id: 'free', name: 'Free Drive', desc: 'No timer. Explore and practise the controls.' },
 ];
 
 export function RaceSetup() {
-  const { mode, setMode, trackId, setTrack, save, startRace, go, buyTrack, selectCar, openGarage } = useGame();
+  const { mode, setMode, trackId, setTrack, save, startRace, go, buyTrack, selectCar, openGarage, weather, setWeather } = useGame();
   const owned = save.unlockedCars;
   const car = getCar(save.selectedCar);
   const cycle = (d: number) => {
@@ -22,7 +29,11 @@ export function RaceSetup() {
     const i = list.findIndex((c) => c.id === car.id);
     selectCar(list[(i + d + list.length) % list.length].id);
   };
-  const unlocked = save.unlockedTracks.includes(trackId);
+  const customs = useMemo(() => loadTracks().map((d) => compileDoc(d).def).filter((d): d is NonNullable<typeof d> => !!d), []);
+  useMemo(() => customs.forEach(registerCustomTrack), [customs]);
+  const allTracks = [...TRACKS, ...customs];
+  const isCustom = (id: string) => customs.some((c) => c.id === id);
+  const unlocked = save.unlockedTracks.includes(trackId) || isCustom(trackId);
   return (
     <ScreenFrame title="RACE SETUP" subtitle="Choose mode · track · vehicle" onBack={() => go('menu')} right={<Credits n={save.credits} />}>
       <div className="pointer-events-none flex h-full min-h-0 flex-col gap-3">
@@ -32,9 +43,14 @@ export function RaceSetup() {
           ))}
         </div>
         <div className="text-[11px] tracking-[0.2em] text-cyan-100/70">{MODES.find((m) => m.id === mode)?.desc}</div>
+        <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-[10px] tracking-[0.25em] text-cyan-100/60">WEATHER</span>
+          <NeonButton size="sm" variant={weather === 'default' ? 'primary' : 'ghost'} onClick={() => setWeather('default')}>Map default</NeonButton>
+          {WEATHER_LIST.map((w) => <NeonButton key={w.id} size="sm" variant={weather === w.id ? 'primary' : 'ghost'} onClick={() => setWeather(w.id)}>{w.icon} {w.name}</NeonButton>)}
+        </div>
         <div className="nr-scroll pointer-events-auto grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 pr-1 sm:grid-cols-3">
-          {TRACKS.map((t) => {
-            const isUnlocked = save.unlockedTracks.includes(t.id);
+          {allTracks.map((t) => {
+            const isUnlocked = save.unlockedTracks.includes(t.id) || isCustom(t.id);
             const rec = save.records[t.id];
             const sel = t.id === trackId;
             const len = getTrack(t.id).length;
@@ -73,8 +89,8 @@ export function RaceSetup() {
           <NeonButton size="sm" variant="magenta" onClick={() => openGarage('vehicles')}>Garage</NeonButton>
           <div className="ml-auto flex items-center gap-2">
             {!unlocked ? (
-              <NeonButton variant="gold" size="lg" disabled={save.credits < (TRACKS.find((t) => t.id === trackId)?.unlockCost ?? 0)} onClick={() => buyTrack(trackId)}>
-                Unlock · {fmtNum(TRACKS.find((t) => t.id === trackId)!.unlockCost)}
+              <NeonButton variant="gold" size="lg" disabled={save.credits < (allTracks.find((t) => t.id === trackId)?.unlockCost ?? 0)} onClick={() => buyTrack(trackId)}>
+                Unlock · {fmtNum(allTracks.find((t) => t.id === trackId)!.unlockCost)}
               </NeonButton>
             ) : (
               <NeonButton variant="primary" size="lg" onClick={startRace}>Start ▶</NeonButton>

@@ -1,4 +1,5 @@
 import type { ObstacleKind, ThemeId } from '../core/types';
+import type { WeatherId } from '../weather/weather';
 import type { Cmd } from './trackBuilder';
 
 export interface TrackPalette {
@@ -27,14 +28,30 @@ export interface TrackDef {
     slalom: number; // probability an event becomes a two-block slalom
   };
   pads: { boost: number; jump: number; surfaceWeights: [number, number, number, number] };
+  /** default weather for this map */
+  weather?: WeatherId;
+  /** fixed moving platforms (used by the track editor): fraction of lap + surface */
+  movers?: { f: number; surface: number }[];
+  fixedPads?: { f: number; kind: 'boost' | 'jump'; surface: number }[];
+  checkpointFs?: number[];
+  fogMul?: number; // custom maps: 1 = default fog, 2 = thicker
+  race?: { laps: number; aiDifficulty: number; maxRacers: number; startSlot: number; timeLimit: number };
+  lighting?: number; // custom maps: scene light multiplier
+  decor?: number; // custom maps: scenery density multiplier 0..1.5
+  custom?: boolean;
 }
+
+const customDefs = new Map<string, TrackDef>();
+export const registerCustomTrack = (def: TrackDef) => { customDefs.set(def.id, def); };
+export const customTrackDefs = () => [...customDefs.values()];
 
 export const TRACKS: TrackDef[] = [
   {
     id: 'neon-city',
-    name: 'NEON CITY',
-    subtitle: 'Beginner · Cyberpunk skyline',
-    description: 'A glowing megacity circuit. Wide gravity tube, long tunnels, a crest jump and friendly obstacles. Learn to ride the walls.',
+    name: 'NEON TOKYO',
+    subtitle: 'Beginner · Rainy neon streets',
+    weather: 'rain',
+    description: 'A rain-soaked megacity night. Wide gravity tube, tight corners, long tunnels, glowing billboards and wet reflective asphalt.',
     difficulty: 1,
     theme: 'city',
     width: 9,
@@ -64,9 +81,10 @@ export const TRACKS: TrackDef[] = [
   },
   {
     id: 'gravity-core',
-    name: 'GRAVITY CORE',
-    subtitle: 'Advanced · Loops & ceilings',
-    description: 'Two giant vertical loops, a barrel-roll tube and moving platforms. The floor is crowded — the ceiling is where you win.',
+    name: 'SKY DISTRICT',
+    weather: 'sunset',
+    subtitle: 'Advanced · Floating loops & ceilings',
+    description: 'A floating city above the clouds: giant vertical loops, a barrel-roll tube, moving platforms and ceiling tracks at sunset.',
     difficulty: 2,
     theme: 'core',
     width: 8,
@@ -100,9 +118,10 @@ export const TRACKS: TrackDef[] = [
   },
   {
     id: 'void-station',
-    name: 'VOID STATION',
-    subtitle: 'Expert · Floating sections',
-    description: 'A derelict orbital station. Broken track, huge gaps, dynamic hazards and sustained top speed. Switch surfaces or jump — or fall.',
+    name: 'VOID UNDERGROUND',
+    weather: 'night',
+    subtitle: 'Expert · Industrial underground',
+    description: 'A derelict industrial underground: broken track, huge gaps, moving platforms and dangerous hazards under harsh neon lights. Switch surfaces or jump — or fall.',
     difficulty: 3,
     theme: 'void',
     width: 8,
@@ -141,6 +160,39 @@ export const TRACKS: TrackDef[] = [
     obstacles: { count: 30, f0: 0.07, f1: 0.94, kinds: [['block', 3], ['low', 2], ['mover', 3]], surfaceWeights: [4, 3, 2, 3], slalom: 0.25 },
     pads: { boost: 14, jump: 1, surfaceWeights: [3, 2, 3, 2] },
   },
+  {
+    id: 'neon-wasteland',
+    name: 'NEON WASTELAND',
+    subtitle: 'Hard · Desert highways',
+    weather: 'sandstorm',
+    description: 'A futuristic desert of abandoned towers and endless highways. Dune jumps, sandstorms and a hidden underground facility cut through the dust.',
+    difficulty: 2,
+    theme: 'desert',
+    width: 9,
+    laps: 3,
+    seed: 4404,
+    unlockCost: 6500,
+    palette: { a: '#ffb13b', b: '#ff4d8d', c: '#3bf0ff', base: '#120a06', fog: '#3a1d0c', skyTop: '#2a1224', skyBottom: '#ff8a3d' },
+    cmds: [
+      { t: 's', len: 420, free: true },
+      { t: 'turn', deg: 90, r: 190 },
+      { t: 's', len: 520, free: true },
+      { t: 'turn', deg: 90, r: 190 },
+      { t: 's', len: 160 },
+      { t: 'hill', deg: 7, len: 70 }, { t: 'hill', deg: -7, len: 70 },
+      { t: 's', len: 120 },
+      { t: 'turn', deg: -35, r: 240 }, { t: 'turn', deg: 35, r: 240 },
+      { t: 's', len: 260 },
+      { t: 'turn', deg: 90, r: 190 },
+      { t: 's', len: 380 },
+      { t: 'turn', deg: 90, r: 190 },
+      { t: 's', len: 120 },
+    ],
+    tunnels: [[0.3, 0.38], [0.74, 0.8]],
+    gaps: [{ f: 0.56, len: 20, surfaces: [0] }],
+    obstacles: { count: 26, f0: 0.07, f1: 0.93, kinds: [['block', 4], ['low', 3], ['mover', 1]], surfaceWeights: [5, 2, 1, 2], slalom: 0.15 },
+    pads: { boost: 16, jump: 2, surfaceWeights: [4, 2, 2, 2] },
+  },
 ];
 
-export const getTrackDef = (id: string) => TRACKS.find((t) => t.id === id) ?? TRACKS[0];
+export const getTrackDef = (id: string) => TRACKS.find((t) => t.id === id) ?? customDefs.get(id) ?? TRACKS[0];

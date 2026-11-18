@@ -11,6 +11,7 @@ import { Garage } from '../ui/Garage';
 import { Settings } from '../ui/Settings';
 import { HowToPlay } from '../ui/HowToPlay';
 import { Profile } from '../ui/Profile';
+import { EditorScreen } from '../editor/EditorScreen';
 import { HUD } from '../ui/HUD';
 import { TouchControls } from '../ui/TouchControls';
 import { Results } from '../ui/Results';
@@ -92,6 +93,7 @@ export function App() {
       {screen === 'settings' && <Settings />}
       {screen === 'howto' && <HowToPlay />}
       {screen === 'profile' && <Profile />}
+      {screen === 'editor' && <EditorScreen />}
       {screen === 'race' && <HUD />}
       {showTouch && !showSettingsInPause && <TouchControls />}
       {screen === 'results' && <Results />}

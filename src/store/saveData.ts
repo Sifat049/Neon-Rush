@@ -18,7 +18,10 @@ export interface SaveData {
   records: Record<string, TrackRecord>;
   stats: Stats; achievements: string[];
   settings: Settings;
+  /** local top-5 lists per event + track, key = `${kind}:${trackId}` */
+  leaderboards?: Record<string, LeaderEntry[]>;
 }
+export interface LeaderEntry { name: string; score: number; car: string; date: number }
 
 export const isTouchDevice = () => typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)').matches || 'ontouchstart' in window);
 export const defaultQuality = (): QualityLevel => (isTouchDevice() ? 'MEDIUM' : 'HIGH');
@@ -95,6 +98,9 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'gold', name: 'PRECISION', desc: 'Earn a Gold medal in Gravity Challenge', check: (s) => Object.values(s.records).some((r) => r.medal === 'GOLD') },
   { id: 'lvl5', name: 'VETERAN', desc: 'Reach player level 5', check: (s) => levelInfo(s.xp).level >= 5 },
   { id: 'tuned', name: 'FULLY TUNED', desc: 'Max out any upgrade', check: (s) => Object.values(s.upgrades).some((u) => Object.values(u).some((v) => v >= 5)) },
+  { id: 'drifter', name: 'DRIFT KING', desc: 'Earn a Gold medal in Drift Challenge', check: (_s, r) => r?.event?.kind === 'drift' && r.event.outcome === 'GOLD' },
+  { id: 'stuntman', name: 'STUNT DOUBLE', desc: 'Earn a Gold medal in Stunt Arena', check: (_s, r) => r?.event?.kind === 'stunt' && r.event.outcome === 'GOLD' },
+  { id: 'ghost', name: 'GHOST', desc: 'Escape the police', check: (_s, r) => r?.event?.kind === 'police' && r.event.outcome === 'ESCAPED' },
   { id: 'allsurf', name: 'EVERY ANGLE', desc: 'Drive on all four surfaces in one race', check: (_s, r) => !!r && r.surfaces >= 4 },
 ];
 
@@ -104,6 +110,10 @@ export interface Rewards { credits: number; xp: number; lines: [string, number][
 export function computeRewards(sum: RaceSummary): { credits: number; xp: number; lines: [string, number][] } {
   const lines: [string, number][] = [];
   let credits = 0, xp = 0;
+  if (sum.event) {
+    for (const [k, v] of sum.event.rewards) { lines.push([k, v]); credits += v; }
+    return { credits, xp: sum.event.xp, lines };
+  }
   if (sum.mode === 'quick') {
     const base = [800, 520, 340, 220][sum.playerPlace - 1] ?? 150;
     lines.push([`Position P${sum.playerPlace}`, base]);

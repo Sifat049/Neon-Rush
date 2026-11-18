@@ -19,9 +19,12 @@ varying vec2 vUv; varying vec3 vW; varying float vTun; varying float vKind;
 void main(){ vUv = uv; vTun = aTun; vKind = aKind; vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`;
 const roadFrag = /* glsl */ `
 ${FOG_DECL}
-uniform float uTime; uniform vec3 uA; uniform vec3 uB; uniform vec3 uC; uniform vec3 uBase; uniform float uGlass;
+uniform float uTime; uniform vec3 uA; uniform vec3 uB; uniform vec3 uC; uniform vec3 uBase; uniform float uGlass; uniform float uWet; uniform vec3 uSky;
 varying vec2 vUv; varying vec3 vW; varying float vTun; varying float vKind;
 float band(float x, float w){ return 1.0 - smoothstep(0.0, w, abs(x)); }
+float hh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+  return mix(mix(hh(i), hh(i+vec2(1,0)), f.x), mix(hh(i+vec2(0,1)), hh(i+vec2(1,1)), f.x), f.y); }
 void main(){
   float u = vUv.x * 2.0 - 1.0; float v = vUv.y; float au = abs(u);
   float edge = smoothstep(0.78, 1.0, au);
@@ -39,10 +42,16 @@ void main(){
   float ring = pow(max(0.0, cos(v / 22.0 * 6.2831)), 40.0);
   c += uC * ring * 2.2 * vTun;
   c *= mix(1.0, 0.6, vTun);
+  // wet asphalt: puddles that mirror the neon and the sky
+  float puddle = uWet * (0.45 + 0.55 * smoothstep(0.35, 0.65, vn(vec2(u * 5.0, v / 14.0))));
+  float streak = 0.55 + 0.45 * sin(v * 0.35 + u * 3.0);
+  c = mix(c, c * 0.55, puddle * 0.6);
+  c += (uA * (edge * 0.9 + center * 0.5) + uC * cross * 0.4 + uSky * 0.35) * puddle * streak * 0.9;
   float glow = clamp(edge + lane + center * 0.8 + cross * 0.5 + pulse * 0.25 * (1.0 - edge) + ring * vTun, 0.0, 1.0);
   float baseA = (vKind < 0.5 ? 0.9 : uGlass);
   baseA = mix(baseA, 0.985, vTun);
   float a = mix(baseA, 1.0, glow);
+  a = mix(a, 1.0, puddle * 0.35);
   float d = distance(cameraPosition, vW);
   float f = smoothstep(uFogNear, uFogFar, d);
   c = mix(c, uFogColor, f); a *= (1.0 - f * 0.9);
@@ -53,7 +62,7 @@ export function createRoadMaterial(p: TrackPalette, fog: FogU, glass: number) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 }, uA: { value: new THREE.Color(p.a) }, uB: { value: new THREE.Color(p.b) }, uC: { value: new THREE.Color(p.c) },
-      uBase: { value: new THREE.Color(p.base) }, uGlass: { value: glass }, ...fog,
+      uBase: { value: new THREE.Color(p.base) }, uGlass: { value: glass }, uWet: { value: 0 }, uSky: { value: new THREE.Color(p.skyBottom) }, ...fog,
     },
     vertexShader: roadVert, fragmentShader: roadFrag, transparent: true, depthWrite: false, side: THREE.DoubleSide,
   });
